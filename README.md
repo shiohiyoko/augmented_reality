@@ -41,3 +41,7 @@ To solve this, we can use feature extraction from detected rectangle.
 <img src="./img/failed_img.png"  width="50%">
 </div>
 
+
+# Credits
+Code adapted from https://github.com/mafda/augmented_reality_101
+
