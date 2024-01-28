@@ -34,19 +34,45 @@ def render(frame, obj, projection, target_image, model_scale, color=False):
     return frame
 
 
-def compute_reprojection_error(homography, points1, points2):
-    # Transform points using homography
-    projected_points = cv2.perspectiveTransform(points1, homography)
-    print(projected_points.shape)
-    print(points2.shape)
+def compute_reprojection_error(projections):
+    min_error = 1000
+    projection = []
+
+    for homography, points1, points2 in homography:
+        # Transform points using homography
+        projected_points = cv2.perspectiveTransform(points1, homography)
+        print(projected_points.shape)
+        print(points2.shape)
     
     # Calculate Euclidean distance between projected points and actual points
-    errors = np.sqrt(np.sum((projected_points - points2)**2, axis=2))
+        errors = np.sqrt(np.sum((projected_points - points2)**2, axis=2))
+        
+        # Compute mean reprojection error
+        mean_error = np.mean(errors)
+        if mean_error < min_error:
+            projection = [homography, points1, points2]
+        
+    return projection
+
+def min_reprojection_error(projections):
+    min_error = 1000
+    projection = None
+
+    for homography, points1, points2 in projections:
+        # Transform points using homography
+        projected_points = cv2.perspectiveTransform(points1, homography)
+        print(projected_points.shape)
+        print(points2.shape)
     
-    # Compute mean reprojection error
-    mean_error = np.mean(errors)
+    # Calculate Euclidean distance between projected points and actual points
+        errors = np.sqrt(np.sum((projected_points - points2)**2, axis=2))
+        
+        # Compute mean reprojection error
+        mean_error = np.mean(errors)
+        if mean_error < min_error:
+            projection = [homography, points1, points2]
     
-    return mean_error
+    return projection
 
 
 def main():
@@ -77,38 +103,55 @@ def main():
             approx_point, frame = findSquares(bw, frame)
 
             # feature extraction
+            projection_list = []
 
-            if len(approx_point) > 0:
+            for square in approx_point:
+
+                point = square[0]
+                # print(approx_point)
+                min_point = [np.min(point[:,0]), np.min(point[:,1])]
+                max_point = [np.max(point[:,0]), np.max(point[:,1])]
                 
+                ref_img = reference_image[min_point[1]:max_point[1], min_point[0]:max_point[0]]
+
                 # Initialize ORB detector
                 orb = cv2.ORB_create()
 
-                keypoints_target,keypoints_reference,matches = FeatureExtractor(target_image, reference_image,orb)
+                keypoints_target, keypoints_reference, matches = FeatureExtractor(target_image, ref_img, orb)
+            
 
-                target_point = np.float32([keypoints_target[match.queryIdx].pt for match in matches[:10]]).reshape(-1, 1, 2)
-                ref_point = np.float32([keypoints_reference[match.trainIdx].pt for match in matches[:10]]).reshape(-1, 1, 2)
+                if len(matches) > 4:
+                    eq = lambda x, y : x + y
 
-                homography, _ = cv2.findHomography( target_point, ref_point, cv2.RANSAC, 5.0)
+                    target_point = np.float32([keypoints_target[match.queryIdx].pt for match in matches]).reshape(-1, 1, 2)
+                    ref_point = np.float32([list(map(eq, list(keypoints_reference[match.trainIdx].pt), min_point)) for match in matches]).reshape(-1, 1, 2)
+                    # print(keypoints_reference[0].pt[0])
 
-                if compute_reprojection_error(homography, target_point, ref_point) < 5:
 
-                    # homography calculation
-                    ref_w ,ref_h= target_image.shape
-                    ref_point = [[0,0], [0, ref_h-1], [ref_w-1, ref_h-1], [ref_w-1,0]]
-                    ref_point = np.float32(ref_point).reshape(-1,1,2)
+                    homography, _ = cv2.findHomography( target_point, ref_point, cv2.RANSAC, 5.0)
 
-                    transformedCorners = cv2.perspectiveTransform(ref_point, homography)
+                    projection_list.append([homography, target_point, ref_point])
 
-                    # Draw a polygon on the second image joining the transformed corners
-                    frame = cv2.polylines(
-                        frame, [np.int32(transformedCorners)], True, 255, 3, cv2.LINE_AA,
-                        )
-                    
-                    # obtain 3D projection matrix from homography matrix and camera parameters
-                    projection = projection_matrix(camera_parameters, homography)
+            projection = min_reprojection_error(projection_list)
+            if projection is not None:
+                homography, target_point, ref_point = projection
+                # homography calculation
+                ref_w ,ref_h= target_image.shape
+                ref_point = [[0,0], [0, ref_h-1], [ref_w-1, ref_h-1], [ref_w-1,0]]
+                ref_point = np.float32(ref_point).reshape(-1,1,2)
 
-                    # project cube or model
-                    frame = render(frame, obj, projection, target_image, model_scale, False)
+                transformedCorners = cv2.perspectiveTransform(ref_point, homography)
+
+                # Draw a polygon on the second image joining the transformed corners
+                frame = cv2.polylines(
+                    frame, [np.int32(transformedCorners)], True, 255, 3, cv2.LINE_AA,
+                    )
+                
+                # obtain 3D projection matrix from homography matrix and camera parameters
+                projection = projection_matrix(camera_parameters, homography)
+
+                # project cube or model
+                frame = render(frame, obj, projection, target_image, model_scale, False)
 
                 # show result
             cv2.imshow("norm", frame)

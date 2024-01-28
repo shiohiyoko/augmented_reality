@@ -6,7 +6,8 @@ def FeatureExtractor(target_img, ref_img, detector):
     # Detect keypoints and compute descriptors
     keypoints_target, descriptors_target = detector.detectAndCompute(target_img, None)
     keypoints_reference, descriptors_reference = detector.detectAndCompute(ref_img, None)
-    FeatureMatcher(keypoints_target, keypoints_reference, descriptors_target, descriptors_reference, correspondence)
+    if descriptors_reference is not None and descriptors_target is not None:
+        FeatureMatcher(keypoints_target, keypoints_reference, descriptors_target, descriptors_reference, correspondence)
     
     return keypoints_target, keypoints_reference, correspondence
 
